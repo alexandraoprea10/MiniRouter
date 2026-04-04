@@ -43,7 +43,7 @@
      frag      = 0
      ttl       = 63
      proto     = icmp
-     chksum    = 0x0
+     chksum    = 0xfa8c
      src       = 192.168.0.2
      dst       = 192.168.0.1
      \options   \

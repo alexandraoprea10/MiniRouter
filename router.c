@@ -107,7 +107,9 @@ int main(int argc, char *argv[])
 		}
 		ip_header->ttl--;
 		ip_header->checksum = 0;
-		ip_header->checksum = htonl(checksum((uint16_t *)ip_header, sizeof(struct ip_hdr)));
+		// am modificat checksum pentru ca reteaua foloseste big-endian(network-order)
+		// pe cand calculatorul foloseste little-endian(host-order)
+		ip_header->checksum = htons(checksum((uint16_t *)ip_header, sizeof(struct ip_hdr)));
 		/* TODO 2.4: Update the ethernet addresses. Use get_mac_entry to find the destination MAC
 		 * address. Use get_interface_mac(m.interface, uint8_t *mac) to
 		 * find the mac address of our interface. */
