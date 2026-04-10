@@ -94,16 +94,129 @@ void send_echo_reply(int packet_len, char *packet, int interface) {
 	new_icmp->check = 0;
 	new_icmp->mcode = 0;
 	new_icmp->mtype = 0;
-	// new_icmp->un_t = 0;
 
 	// recalculez checksum pentru icmp
-	// mai intai recalculez lungimea
-	// int ip_length = new_ip->ihl * 4;
-	// int icmp_length = (new_ip->tot_len) - ip_length;
 	new_icmp->check = htons(checksum((uint16_t *)new_icmp, sizeof(struct ip_hdr)));
 	send_to_link(packet_len, buf, interface);
 }
+void send_destination_unreachable(int packet_len, char *packet, int interface) {
+	// iau headerele din pachetul curent
+	struct ether_hdr *current_eth = (struct ether_hdr *)packet;
+	struct ip_hdr *current_ip = (struct ip_hdr *)(packet + sizeof(struct ether_hdr));
+	struct icmp_hdr *current_icmp = (struct icmp_hdr *)(packet + sizeof(struct ether_hdr) + sizeof(struct ip_hdr));
 
+	// copiez in buffer pachetul curent pentru ca urmeaza sa il modific
+	char buf[1500];
+	// retine informatiile pe care nu le reactualizez
+	memcpy(buf, packet, packet_len);
+
+	// iau headerele din pachetul nou
+	struct ether_hdr *new_eth = (struct ether_hdr *)buf;
+	struct ip_hdr *new_ip = (struct ip_hdr *)(buf + sizeof(struct ether_hdr));
+	struct icmp_hdr *new_icmp = (struct icmp_hdr *)(buf + sizeof(struct ether_hdr) + sizeof(struct ip_hdr));
+
+	// pentru Ethernet
+	// schimb destinatarul
+	memcpy(new_eth->ethr_dhost, current_eth->ethr_shost, 6);
+	uint8_t macAddress[6];
+	get_interface_mac(interface, macAddress);
+	// sursa devine mac-ul interfetei pe care o voi trimite
+	memcpy(new_eth->ethr_shost, macAddress, 6);
+
+	// pentru ip
+	// recalculez checksum-ul cu noul ip
+	new_ip->checksum = 0;
+	new_ip->checksum = htons(checksum((uint16_t *)new_ip, sizeof(struct ip_hdr)));
+	// destinatia devine sursa
+	new_ip->dest_addr = current_ip->source_addr;
+	// new_ip->frag = se copiaza din pachetul curent
+	// new_ip->id = se copiaza din pachetul curent
+	// new_ip->ihl = se copiaza din pachetul curent
+	// new_ip->proto = se copiaza din pachetul curent
+	// sursa devine ip-ul interfetei noastre
+	new_ip->source_addr = inet_addr(get_interface_ip(interface));
+	// new_ip->tos = se copiaza din pachetul curent
+	// new_ip->tot_len = se copiaza din pachetul curent
+	// resetez ttl-ul
+	new_ip->ttl = 100;
+	// new_ip->ver = se copiaza din pachetul curent
+
+	// pentru icmp
+	// destination unreachable are codul (3,0)
+	new_icmp->check = 0;
+	new_icmp->mcode = 0;
+	new_icmp->mtype = 3;
+
+	// recalculez checksum pentru icmp
+	new_icmp->check = htons(checksum((uint16_t *)new_icmp, sizeof(struct ip_hdr)));
+	send_to_link(packet_len, buf, interface);
+}
+void send_time_exceeded(int packet_len, char *packet, int interface) {
+	// iau headerele din pachetul curent
+	struct ether_hdr *current_eth = (struct ether_hdr *)packet;
+	struct ip_hdr *current_ip = (struct ip_hdr *)(packet + sizeof(struct ether_hdr));
+	struct icmp_hdr *current_icmp = (struct icmp_hdr *)(packet + sizeof(struct ether_hdr) + sizeof(struct ip_hdr));
+
+	// copiez in buffer pachetul curent pentru ca urmeaza sa il modific
+	char buf[1500];
+	// retine informatiile pe care nu le reactualizez
+	memcpy(buf, packet, packet_len);
+
+	// iau headerele din pachetul nou
+	struct ether_hdr *new_eth = (struct ether_hdr *)buf;
+	struct ip_hdr *new_ip = (struct ip_hdr *)(buf + sizeof(struct ether_hdr));
+	struct icmp_hdr *new_icmp = (struct icmp_hdr *)(buf + sizeof(struct ether_hdr) + sizeof(struct ip_hdr));
+
+	// pentru Ethernet
+	// schimb destinatarul
+	memcpy(new_eth->ethr_dhost, current_eth->ethr_shost, 6);
+	uint8_t macAddress[6];
+	get_interface_mac(interface, macAddress);
+	// sursa devine mac-ul interfetei pe care o voi trimite
+	memcpy(new_eth->ethr_shost, macAddress, 6);
+
+	// pentru ip
+	// recalculez checksum-ul cu noul ip
+	new_ip->checksum = 0;
+	new_ip->checksum = htons(checksum((uint16_t *)new_ip, sizeof(struct ip_hdr)));
+	// destinatia devine sursa
+	new_ip->dest_addr = current_ip->source_addr;
+	// new_ip->frag = se copiaza din pachetul curent
+	// new_ip->id = se copiaza din pachetul curent
+	// new_ip->ihl = se copiaza din pachetul curent
+	// indiferent de tipul pahcetului, trebuie sa il declar ca pachet ICMP
+	new_ip->proto = 1;
+	// sursa devine ip-ul interfetei noastre
+	new_ip->source_addr = inet_addr(get_interface_ip(interface));
+	// new_ip->tos = se copiaza din pachetul curent
+	// calculez lungimea header-ului din pachet(in bytes)
+	int current_ip_len = current_ip->ihl * 4;
+	// lungimea totala din icmp(payload-ul are 64 biti-> mai adaug 8 bytes)
+	int total_len = sizeof(struct icmp_hdr) + current_ip_len + 8;
+	// resetez lungimea totala, pe care tocmai am calculat-o
+	// e nevoie de htons -> trebuie convertit in netowrk order
+	new_ip->tot_len = htons(sizeof(struct ip_hdr) + total_len);
+	// resetez ttl-ul
+	new_ip->ttl = 100;
+	// new_ip->ver = se copiaza din pachetul curent
+
+	// pentru icmp
+	// time_exceeded are codul (11, 0)
+	new_icmp->check = 0;
+	new_icmp->mcode = 0;
+	new_icmp->mtype = 11;
+
+	// extragem payload-ul din ICMP
+	uint8_t *payload = (uint8_t *)new_icmp + sizeof(struct icmp_hdr);
+	// copiez header-ul IP si apoi adaug payload-ul(care are 64 biti -> 8 bytes)
+	memcpy(payload, current_ip, current_ip_len + 8);
+	// recalculez checksum pentru icmp
+	new_icmp->check = 0;
+	new_icmp->check = htons(checksum((uint16_t *)new_icmp, total_len));
+	// recalculez lungimea totala a pachetului
+	int full = sizeof(struct ether_hdr) + ntohs(new_ip->tot_len);
+	send_to_link(full, buf, interface);
+}
 int main(int argc, char *argv[])
 {
 	int interface;
@@ -168,8 +281,10 @@ int main(int argc, char *argv[])
 			continue;
 		}
 		/* TODO 2.3: Check TTL > 1. Update TLL. Update checksum  */
+		// daca se termina TTL, atunci trimit mesajul de eroare
 		if (ip_header->ttl <= 1) {
 			printf("TTL terminated!\n");
+			send_time_exceeded(packet_len, packet, interface);
 			continue;
 		}
 		ip_header->ttl--;
