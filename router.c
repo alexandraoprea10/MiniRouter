@@ -278,13 +278,18 @@ int main(int argc, char *argv[])
 			printf("Wrong IP!\n");
 			continue;
 		}
-		// verificam daca pachetul este de tip ICMP
-		if (ip_header->proto == 1) {
-				struct icmp_hdr *new_icmp = (struct icmp_hdr *)(packet + sizeof(struct ether_hdr) + sizeof(struct ip_hdr));
-				if (new_icmp->mtype == 8 && new_icmp->mcode == 0) {
-					printf("Transmitting ICMP Echo Request!\n");
-					send_echo_reply(packet_len, packet, interface);
-				}
+		// trebuie sa verific si daca pachetul este destinat router-ului
+		// altfel, toate pachetele ICMP ar fi tratate ca Echo Request
+		uint32_t current_ip = inet_addr(get_interface_ip(interface));
+		if (ip_header->dest_addr == current_ip) {
+			// verificam daca pachetul este de tip ICMP
+			if (ip_header->proto == 1) {
+					struct icmp_hdr *new_icmp = (struct icmp_hdr *)(packet + sizeof(struct ether_hdr) + sizeof(struct ip_hdr));
+					if (new_icmp->mtype == 8 && new_icmp->mcode == 0) {
+						printf("Transmitting ICMP Echo Request!\n");
+						send_echo_reply(packet_len, packet, interface);
+					}
+			}
 			continue;
 		}
 		/* TODO 2.2: Call get_best_route to find the most specific route, continue; (drop) if null */
