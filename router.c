@@ -47,6 +47,63 @@ struct arp_table_entry *get_mac_entry(uint32_t given_ip) {
 	return NULL;
 }
 
+void send_echo_reply(int packet_len, char *packet, int interface) {
+	// iau headerele din pachetul curent
+	struct ether_hdr *current_eth = (struct ether_hdr *)packet;
+	struct ip_hdr *current_ip = (struct ip_hdr *)(packet + sizeof(struct ether_hdr));
+	struct icmp_hdr *current_icmp = (struct icmp_hdr *)(packet + sizeof(struct ether_hdr) + sizeof(struct ip_hdr));
+
+	// copiez in buffer pachetul curent pentru ca urmeaza sa il modific
+	char buf[1500];
+	// retine informatiile pe care nu le reactualizez
+	memcpy(buf, packet, packet_len);
+
+	// iau headerele din pachetul nou
+	struct ether_hdr *new_eth = (struct ether_hdr *)buf;
+	struct ip_hdr *new_ip = (struct ip_hdr *)(buf + sizeof(struct ether_hdr));
+	struct icmp_hdr *new_icmp = (struct icmp_hdr *)(buf + sizeof(struct ether_hdr) + sizeof(struct ip_hdr));
+
+	// pentru Ethernet
+	// schimb destinatarul
+	memcpy(new_eth->ethr_dhost, current_eth->ethr_shost, 6);
+	uint8_t macAddress[6];
+	get_interface_mac(interface, macAddress);
+	// sursa devine mac-ul interfetei pe care o voi trimite
+	memcpy(new_eth->ethr_shost, macAddress, 6);
+
+	// pentru ip
+	// recalculez checksum-ul cu noul ip
+	new_ip->checksum = 0;
+	new_ip->checksum = htons(checksum((uint16_t *)new_ip, sizeof(struct ip_hdr)));
+	// destinatia devine sursa
+	new_ip->dest_addr = current_ip->source_addr;
+	// new_ip->frag = se copiaza din pachetul curent
+	// new_ip->id = se copiaza din pachetul curent
+	// new_ip->ihl = se copiaza din pachetul curent
+	// new_ip->proto = se copiaza din pachetul curent
+	// sursa devine ip-ul interfetei noastre
+	new_ip->source_addr = inet_addr(get_interface_ip(interface));
+	// new_ip->tos = se copiaza din pachetul curent
+	// new_ip->tot_len = se copiaza din pachetul curent
+	// resetez ttl-ul
+	new_ip->ttl = 100;
+	// new_ip->ver = se copiaza din pachetul curent
+
+	// pentru icmp
+	// echo_reply are codul (0,0)
+	new_icmp->check = 0;
+	new_icmp->mcode = 0;
+	new_icmp->mtype = 0;
+	// new_icmp->un_t = 0;
+
+	// recalculez checksum pentru icmp
+	// mai intai recalculez lungimea
+	// int ip_length = new_ip->ihl * 4;
+	// int icmp_length = (new_ip->tot_len) - ip_length;
+	new_icmp->check = htons(checksum((uint16_t *)new_icmp, sizeof(struct ip_hdr)));
+	send_to_link(packet_len, buf, interface);
+}
+
 int main(int argc, char *argv[])
 {
 	int interface;
@@ -94,10 +151,20 @@ int main(int argc, char *argv[])
 			printf("Wrong IP!\n");
 			continue;
 		}
+		// verificam daca pachetul este de tip ICMP
+		if (ip_header->proto == 1) {
+				struct icmp_hdr *new_icmp = (struct icmp_hdr *)(packet + sizeof(struct ether_hdr) + sizeof(struct ip_hdr));
+				if (new_icmp->mtype == 8 && new_icmp->mcode == 0) {
+					printf("Transmitting ICMP Echo Request!\n");
+					send_echo_reply(packet_len, packet, interface);
+				}
+			continue;
+		}
 		/* TODO 2.2: Call get_best_route to find the most specific route, continue; (drop) if null */
 		struct route_table_entry *bestRoute = get_best_route(ip_header->dest_addr);
 		if (bestRoute == NULL) {
 			printf("Route not found!\n");
+			// send_icmp_bad(interface, packet, 3, 0);
 			continue;
 		}
 		/* TODO 2.3: Check TTL > 1. Update TLL. Update checksum  */
