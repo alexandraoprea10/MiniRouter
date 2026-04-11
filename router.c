@@ -26,6 +26,20 @@ struct packet_queue {
 	uint32_t next_hop;
 };
 
+struct trie_node {
+	struct trie_node *children[2];
+	struct route_table_entry *best_route;
+};
+
+struct trie_node *root;
+
+struct trie_node *add_node() {
+	struct trie_node *new_node = malloc(sizeof(struct trie_node));
+	new_node->children[0] = NULL;
+	new_node->children[1] = NULL;
+	new_node->best_route = NULL;
+	return new_node;
+}
 /*
  Returns a pointer (eg. &rtable[i]) to the best matching route, or NULL if there
  is no matching route.
@@ -363,6 +377,8 @@ int main(int argc, char *argv[])
 	int interface;
 	char packet[1500];
 	int packet_len;
+
+	root = add_node();
 
 	/* Don't touch this */
 	init(argv + 2, argc - 2);
