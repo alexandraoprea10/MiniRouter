@@ -5,6 +5,7 @@
 #define ETHERTYPE_IP		0x0800	/* IP protocol */
 #endif
 
+// 0x0806  Address Resolution Protocol (ARP)
 #ifndef ETHERTYPE_ARP
 #define ETHERTYPE_ARP		0x0806	/* ARP protocol */
 #endif

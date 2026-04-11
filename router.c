@@ -18,7 +18,7 @@ int mac_table_len;
 // coada de pachete
 queue my_queue;
 
-// pachet de cozi, contine pachete
+// pachet de cozi, contine pachete ce asteapta raspuns ARP
 struct packet_queue {
 	char packet[1500];
 	int packet_len;
@@ -36,12 +36,12 @@ struct route_table_entry *get_best_route(uint32_t ip_dest) {
 	 * the rtable are in network order already */
 	struct route_table_entry *newEntry = NULL;
 	for (int i = 0; i < rtable_len; i++) {
-    if (rtable[i].prefix == (ip_dest & rtable[i].mask)) {
-      if (newEntry == NULL)
+	if (rtable[i].prefix == (ip_dest & rtable[i].mask)) {
+	  if (newEntry == NULL)
 		newEntry = &rtable[i];
 	if (ntohl(rtable[i].mask) > ntohl(newEntry->mask))
 		newEntry = &rtable[i];
-    }
+	}
 }
 	return newEntry;
 }
@@ -84,9 +84,6 @@ void send_echo_reply(int packet_len, char *packet, int interface) {
 	memcpy(new_eth->ethr_shost, macAddress, 6);
 
 	// pentru ip
-	// recalculez checksum-ul cu noul ip
-	new_ip->checksum = 0;
-	new_ip->checksum = htons(checksum((uint16_t *)new_ip, sizeof(struct ip_hdr)));
 	// destinatia devine sursa
 	new_ip->dest_addr = current_ip->source_addr;
 	// new_ip->frag = se copiaza din pachetul curent
@@ -100,6 +97,10 @@ void send_echo_reply(int packet_len, char *packet, int interface) {
 	// resetez ttl-ul
 	new_ip->ttl = 100;
 	// new_ip->ver = se copiaza din pachetul curent
+	// recalculez checksum-ul cu noul ip
+	// am schimbat ordinea, calculez checksum-ul dupa ce termin de modificat structura
+	new_ip->checksum = 0;
+	new_ip->checksum = htons(checksum((uint16_t *)new_ip, sizeof(struct ip_hdr)));
 
 	// pentru icmp
 	// echo_reply are codul (0,0)
@@ -137,6 +138,7 @@ void send_destination_unreachable(int packet_len, char *packet, int interface) {
 
 	// pentru ip
 	// recalculez checksum-ul cu noul ip
+	// am schimbat ordinea, calculez checksum-ul dupa ce termin de modificat structura
 	new_ip->checksum = 0;
 	new_ip->checksum = htons(checksum((uint16_t *)new_ip, sizeof(struct ip_hdr)));
 	// destinatia devine sursa
@@ -202,9 +204,6 @@ void send_time_exceeded(int packet_len, char *packet, int interface) {
 	memcpy(new_eth->ethr_shost, macAddress, 6);
 
 	// pentru ip
-	// recalculez checksum-ul cu noul ip
-	new_ip->checksum = 0;
-	new_ip->checksum = htons(checksum((uint16_t *)new_ip, sizeof(struct ip_hdr)));
 	// destinatia devine sursa
 	new_ip->dest_addr = current_ip->source_addr;
 	// new_ip->frag = se copiaza din pachetul curent
@@ -225,6 +224,10 @@ void send_time_exceeded(int packet_len, char *packet, int interface) {
 	// resetez ttl-ul
 	new_ip->ttl = 100;
 	// new_ip->ver = se copiaza din pachetul curent
+	// recalculez checksum-ul cu noul ip
+	// am schimbat ordinea, calculez checksum-ul dupa ce termin de modificat structura
+	new_ip->checksum = 0;
+	new_ip->checksum = htons(checksum((uint16_t *)new_ip, sizeof(struct ip_hdr)));
 
 	// pentru icmp
 	// time_exceeded are codul (11, 0)
@@ -264,6 +267,7 @@ void send_arp_reply(int interface, char *packet, int packet_len) {
 	get_interface_mac(interface, macAddress);
 	// sursa devine mac-ul interfetei pe care o voi trimite
 	memcpy(new_eth->ethr_shost, macAddress, 6);
+	new_eth->ethr_type = htons(ETHERTYPE_ARP);
 
 	// pentru ARP
 	// modific tipul de arp (2 este pentru reply)
@@ -277,6 +281,82 @@ void send_arp_reply(int interface, char *packet, int packet_len) {
 	new_arp->tprotoa = current_arp->sprotoa;
 
 	send_to_link(packet_len, buf, interface);
+}
+void send_arp_request(int interface, uint32_t next_hop) {
+	// creez un nou buffer pentru ca nu am de unde sa copiez datele
+	// trebuie sa creez eu de la 0 pachetul
+	char buf[1500];
+	// retine informatiile pe care nu le reactualizez
+	memset(buf, 0, sizeof(buf));
+
+	// iau headerele din pachetul nou
+	struct ether_hdr *new_eth = (struct ether_hdr *)buf;
+	struct arp_hdr *new_arp = (struct arp_hdr *)(buf + sizeof(struct ether_hdr));
+
+	// pentru Ethernet
+	// schimb destinatarul
+	uint8_t dest[6];
+	memset(dest, 0xFF, 6);
+	memcpy(new_eth->ethr_dhost, dest, 6);
+	uint8_t macAddress[6];
+	get_interface_mac(interface, macAddress);
+	// sursa devine mac-ul interfetei pe care o voi trimite
+	memcpy(new_eth->ethr_shost, macAddress, 6);
+	new_eth->ethr_type = htons(ETHERTYPE_ARP);
+
+	// pentru ARP
+	// lungimea adresei MAC
+	new_arp->hw_len = 6;
+	// Ethernet
+	new_arp->hw_type = htons(1);
+	// modific tipul operatiei de arp (1 este pentru request)
+	new_arp->opcode = htons(1);
+	// lungime adresa IPv4
+	new_arp->proto_len = 4;
+	// il facem IPv4
+	new_arp->proto_type = htons(ETHERTYPE_IP);
+	// sender-ul hardware devine adresa MAC de mai sus
+	memcpy(new_arp->shwa, macAddress, 6);
+	// sender-ul protocol devine interfata din argument
+	new_arp->sprotoa = inet_addr(get_interface_ip(interface));
+	// target-ul este next_hopul pentru care cautam MAC-ul
+	uint8_t mac[6];
+	memset(mac, 0, 6);
+	memcpy(new_arp->thwa, mac, 6);
+	// adresa IP pentru care cautam MAC
+	new_arp->tprotoa = next_hop;
+
+	send_to_link(sizeof(struct ether_hdr) + sizeof(struct arp_hdr), buf, interface);
+}
+void add_in_queue(struct arp_hdr *packet) {
+	// adaugam o noua intrarea in tabela ARP
+	mac_table[mac_table_len].ip = packet->sprotoa;
+	memcpy(mac_table[mac_table_len].mac, packet->shwa, 6);
+	mac_table_len++;
+
+	// avem nevoie de o noua coada pentru a procesa pachetele carora nu vreau sa le dau reply
+	queue packets = create_queue();
+	// parcurgem coada si extragem elementele
+	while (!queue_empty(my_queue)) {
+		struct packet_queue *val = (struct packet_queue *)queue_deq(my_queue);
+		// verificam daca am pachetul asteapta raspunsul
+		if (val->next_hop == packet->sprotoa) {
+			struct ether_hdr *new_eth = (struct ether_hdr *)val->packet;
+			// pentru Ethernet- parcurgem ca la ICMP
+			memcpy(new_eth->ethr_dhost, packet->shwa, 6);
+			uint8_t macAddress[6];
+			get_interface_mac(val->interface, macAddress);
+			memcpy(new_eth->ethr_shost, macAddress, 6);
+			send_to_link(val->packet_len, val->packet, val->interface);
+		} else {
+			// nu trimitem pachetul, il adaugam in coada nou creata
+			queue_enq(packets, val);
+		}
+	}
+	// punem toate elementele din coada packets in coada principala
+	while (!queue_empty(packets)) {
+		queue_enq(my_queue, queue_deq(packets));
+	}
 }
 int main(int argc, char *argv[])
 {
@@ -297,13 +377,12 @@ int main(int argc, char *argv[])
 	
 	/* Read the static routing table and the MAC table */
 	rtable_len = read_rtable(argv[1], rtable);
-	FILE *file = fopen("arp_table.txt", "r");
-	if (file != NULL) {
-		fclose(file);
-		mac_table_len = parse_arp_table("arp_table.txt", mac_table);
-	} else {
-		mac_table_len = 0;
-	}
+
+	// PENTRU ARP DINAMIC
+	// sterg fisierul arp_table.txt, scap de ARP static
+	mac_table_len = 0;
+	// in afara while-ului, pierdeam pachete la fiecare while
+	my_queue = create_queue();
 
 	while (1) {
 		/* We call get_packet to receive a packet. get_packet returns
@@ -319,7 +398,6 @@ int main(int argc, char *argv[])
 		struct ether_hdr *eth_hdr = (struct ether_hdr *) packet;
 		struct ip_hdr *ip_header = (struct ip_hdr *)(packet + sizeof(struct ether_hdr));
 
-		my_queue = create_queue();
 
 		// verific daca este pachet ARP
 		if (eth_hdr->ethr_type == htons(ETHERTYPE_ARP)) {
@@ -328,6 +406,9 @@ int main(int argc, char *argv[])
 			// verific daca e de tip arp_request
 			if (ntohs(arp_header->opcode) == 1) {
 				send_arp_reply(interface, packet, packet_len);
+			} else if (ntohs(arp_header->opcode) == 2) {
+				// daca e de tip reply, adaugam in coada header-ul arp
+				add_in_queue(arp_header);
 			}
 			continue;
 		}
@@ -382,7 +463,7 @@ int main(int argc, char *argv[])
 		 * find the mac address of our interface. */
 		struct arp_table_entry *mac = get_mac_entry(bestRoute->next_hop);
 		if (mac == NULL) {
-			printf("Wrong MAC!\n");
+			printf("Wrong MAC, adding in Queue!\n");
 			// adaug in coada un nou pachet
 			struct packet_queue *current_packet = malloc(sizeof(struct packet_queue));
 			// initializez campurile cu cele din pachetul best_route
@@ -391,6 +472,8 @@ int main(int argc, char *argv[])
 			current_packet->packet_len = packet_len;
 			memcpy(current_packet->packet, packet, packet_len);
 			queue_enq(my_queue, current_packet);
+			// trimitem ARP_Request
+			send_arp_request(bestRoute->interface, bestRoute->next_hop);
 			continue;
 		}
 		memcpy(eth_hdr->ethr_dhost, mac->mac, 6);
