@@ -5,6 +5,7 @@
 #include "lib.h"
 #include "protocols.h"
 #include <string.h>
+#include "queue.h"
 
 /* Routing table */
 struct route_table_entry *rtable;
@@ -13,6 +14,17 @@ int rtable_len;
 /* Arp table */
 struct arp_table_entry *mac_table;
 int mac_table_len;
+
+// coada de pachete
+queue my_queue;
+
+// pachet de cozi, contine pachete
+struct packet_queue {
+	char packet[1500];
+	int packet_len;
+	int interface;
+	uint32_t next_hop;
+};
 
 /*
  Returns a pointer (eg. &rtable[i]) to the best matching route, or NULL if there
@@ -231,6 +243,41 @@ void send_time_exceeded(int packet_len, char *packet, int interface) {
 	int full = sizeof(struct ether_hdr) + ntohs(new_ip->tot_len);
 	send_to_link(full, buf, interface);
 }
+void send_arp_reply(int interface, char *packet, int packet_len) {
+	// iau headerele din pachetul curent
+	struct ether_hdr *current_eth = (struct ether_hdr *)packet;
+	struct arp_hdr *current_arp = (struct arp_hdr *)(packet + sizeof(struct ether_hdr));
+
+	// copiez in buffer pachetul curent pentru ca urmeaza sa il modific
+	char buf[1500];
+	// retine informatiile pe care nu le reactualizez
+	memcpy(buf, packet, packet_len);
+
+	// iau headerele din pachetul nou
+	struct ether_hdr *new_eth = (struct ether_hdr *)buf;
+	struct arp_hdr *new_arp = (struct arp_hdr *)(buf + sizeof(struct ether_hdr));
+
+	// pentru Ethernet
+	// schimb destinatarul
+	memcpy(new_eth->ethr_dhost, current_eth->ethr_shost, 6);
+	uint8_t macAddress[6];
+	get_interface_mac(interface, macAddress);
+	// sursa devine mac-ul interfetei pe care o voi trimite
+	memcpy(new_eth->ethr_shost, macAddress, 6);
+
+	// pentru ARP
+	// modific tipul de arp (2 este pentru reply)
+	new_arp->opcode = htons(2);
+	// sender-ul hardware devine adresa MAC de mai sus
+	memcpy(new_arp->shwa, macAddress, 6);
+	// sender-ul protocol devine interfata din argument
+	new_arp->sprotoa = inet_addr(get_interface_ip(interface));
+	// target-ul este sender-hardware(ca la dest-source)
+	memcpy(new_arp->thwa, current_arp->shwa, 6);
+	new_arp->tprotoa = current_arp->sprotoa;
+
+	send_to_link(packet_len, buf, interface);
+}
 int main(int argc, char *argv[])
 {
 	int interface;
@@ -250,8 +297,13 @@ int main(int argc, char *argv[])
 	
 	/* Read the static routing table and the MAC table */
 	rtable_len = read_rtable(argv[1], rtable);
-
-	mac_table_len = parse_arp_table("arp_table.txt", mac_table);
+	FILE *file = fopen("arp_table.txt", "r");
+	if (file != NULL) {
+		fclose(file);
+		mac_table_len = parse_arp_table("arp_table.txt", mac_table);
+	} else {
+		mac_table_len = 0;
+	}
 
 	while (1) {
 		/* We call get_packet to receive a packet. get_packet returns
@@ -266,6 +318,19 @@ int main(int argc, char *argv[])
 		 * at m.payload + sizeof(struct ether_header) */
 		struct ether_hdr *eth_hdr = (struct ether_hdr *) packet;
 		struct ip_hdr *ip_header = (struct ip_hdr *)(packet + sizeof(struct ether_hdr));
+
+		my_queue = create_queue();
+
+		// verific daca este pachet ARP
+		if (eth_hdr->ethr_type == htons(ETHERTYPE_ARP)) {
+			// extrag ARP-ul din pachetul curent
+			struct arp_hdr *arp_header = (struct arp_hdr *)(packet + sizeof(struct ether_hdr));
+			// verific daca e de tip arp_request
+			if (ntohs(arp_header->opcode) == 1) {
+				send_arp_reply(interface, packet, packet_len);
+			}
+			continue;
+		}
 
 		/* Check if we got an IPv4 packet */
 		if (eth_hdr->ethr_type != ntohs(ETHERTYPE_IP)) {
@@ -318,6 +383,14 @@ int main(int argc, char *argv[])
 		struct arp_table_entry *mac = get_mac_entry(bestRoute->next_hop);
 		if (mac == NULL) {
 			printf("Wrong MAC!\n");
+			// adaug in coada un nou pachet
+			struct packet_queue *current_packet = malloc(sizeof(struct packet_queue));
+			// initializez campurile cu cele din pachetul best_route
+			current_packet->interface = bestRoute->interface;
+			current_packet->next_hop = bestRoute->next_hop;
+			current_packet->packet_len = packet_len;
+			memcpy(current_packet->packet, packet, packet_len);
+			queue_enq(my_queue, current_packet);
 			continue;
 		}
 		memcpy(eth_hdr->ethr_dhost, mac->mac, 6);
