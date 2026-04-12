@@ -1,4 +1,4 @@
-#include <arpa/inet.h> /* ntoh, hton and inet_ functions */
+#include <arpa/inet.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -7,18 +7,18 @@
 #include <string.h>
 #include "queue.h"
 
-/* Routing table */
+// Tabela de rutare
 struct route_table_entry *rtable;
 int rtable_len;
 
-/* Arp table */
+// Tabela ARP
 struct arp_table_entry *mac_table;
 int mac_table_len;
 
-// coada de pachete
+// Coada de pachete
 queue my_queue;
 
-// pachet de cozi, contine pachete ce asteapta raspuns ARP
+// Pachet de cozi, contine pachete ce asteapta raspuns ARP
 struct packet_queue {
 	char packet[1500];
 	int packet_len;
@@ -26,16 +26,15 @@ struct packet_queue {
 	uint32_t next_hop;
 };
 
-// structura trie-ului, best route e ceea ce caut
+// Structura trie-ului, best route e ceea ce caut
 struct trie_node {
 	struct trie_node *children[2];
 	struct route_table_entry *best_route;
 };
 
-// radacina
+// Radacina arborelui
 struct trie_node *root;
 
-// functie de creare a unui nod
 struct trie_node *add_node() {
 	struct trie_node *new_node = malloc(sizeof(struct trie_node));
 	new_node->children[0] = NULL;
@@ -70,6 +69,7 @@ void insert_node(struct trie_node *root, struct route_table_entry *new_entry) {
 	// aici este best-route 
 	current->best_route = new_entry;
 }
+
 struct route_table_entry *search(struct trie_node *root, struct route_table_entry *best_route, uint32_t ip_dest, int nr_bits) {
 	// daca gasim un nod NULL, atunci nu exista ruta
 	if (root == NULL || nr_bits < 0)
@@ -83,8 +83,8 @@ struct route_table_entry *search(struct trie_node *root, struct route_table_entr
 	int ip_bit = (ip_dest >> nr_bits) & 1;
 	// apelez recursiv functia
 	return search(root->children[ip_bit], best_route, ip_dest, nr_bits - 1);
-	
 }
+
 struct route_table_entry *get_best_route(uint32_t ip_dest) {
 	// initializam best route, asta vom returna
 	struct route_table_entry *best_route = NULL;
@@ -95,33 +95,10 @@ struct route_table_entry *get_best_route(uint32_t ip_dest) {
 	return best_route;
 }
 
-/*
- Returns a pointer (eg. &rtable[i]) to the best matching route, or NULL if there
- is no matching route.
-*/
-// struct route_table_entry *get_best_route(uint32_t ip_dest) {
-// 	/* TODO 2.2: Implement the LPM algorithm */
-// 	/* We can iterate through rtable for (int i = 0; i < rtable_len; i++). Entries in
-// 	 * the rtable are in network order already */
-// 	struct route_table_entry *newEntry = NULL;
-// 	for (int i = 0; i < rtable_len; i++) {
-// 	if (rtable[i].prefix == (ip_dest & rtable[i].mask)) {
-// 	  if (newEntry == NULL)
-// 		newEntry = &rtable[i];
-// 	if (ntohl(rtable[i].mask) > ntohl(newEntry->mask))
-// 		newEntry = &rtable[i];
-// 	}
-// }
-// 	return newEntry;
-// }
-
 struct arp_table_entry *get_mac_entry(uint32_t given_ip) {
-	/* TODO 2.4: Iterate through the MAC table and search for an entry
-	 * that matches given_ip. */
-
-	/* We can iterate thrpigh the mac_table for (int i = 0; i <
-	 * mac_table_len; i++) */
+	// parcurg tabela si caut intrarile cu IP-ul given_ip
 	for (int i = 0 ; i < mac_table_len; i++) {
+		// daca o gasesc, returnez un pointer la ea
 		if (mac_table[i].ip == given_ip)
 		return &mac_table[i];
 	}
@@ -433,26 +410,28 @@ int main(int argc, char *argv[])
 	char packet[1500];
 	int packet_len;
 
+	// creez arborele
 	root = add_node();
 
-	/* Don't touch this */
 	init(argv + 2, argc - 2);
 
-	/* Code to allocate the MAC and route tables */
+	// aloc tabelele
+	// aloc un numar mai mare, pentru a nu avea probleme cu memoria
+	// rtable0.txt si rtable1.txt au dimensiuni mari
 	rtable = malloc(sizeof(struct route_table_entry) * 1000000);
-	/* DIE is a macro for sanity checks */
 	DIE(rtable == NULL, "memory");
 
 	mac_table = malloc(sizeof(struct  arp_table_entry) * 1000000);
 	DIE(mac_table == NULL, "memory");
 	
-	/* Read the static routing table and the MAC table */
+	//citesc tabelele de rutare
 	rtable_len = read_rtable(argv[1], rtable);
 
 	// inseram toate intrarile din tabela de rutare in arbore
 	for (int i = 0; i < rtable_len; i++) {
 		insert_node(root, &rtable[i]);
 	}
+
 	// PENTRU ARP DINAMIC
 	// sterg fisierul arp_table.txt, scap de ARP static
 	mac_table_len = 0;
@@ -460,16 +439,12 @@ int main(int argc, char *argv[])
 	my_queue = create_queue();
 
 	while (1) {
-		/* We call get_packet to receive a packet. get_packet returns
-		the interface it has received the data from. And writes to
-		len the size of the packet. */
+		// astept primirea pachetelor pe orice interfata
 		interface = recv_from_any_link(packet, (size_t *)&packet_len);
 		DIE(interface < 0, "get_message");
 		printf("We have received a packet\n");
 		
-		/* Extract the Ethernet header from the packet. Since protocols are
-		 * stacked, the first header is the ethernet header, the next header is
-		 * at m.payload + sizeof(struct ether_header) */
+		// extragem header-ele EThernet si IP
 		struct ether_hdr *eth_hdr = (struct ether_hdr *) packet;
 		struct ip_hdr *ip_header = (struct ip_hdr *)(packet + sizeof(struct ether_hdr));
 
@@ -488,17 +463,18 @@ int main(int argc, char *argv[])
 			continue;
 		}
 
-		/* Check if we got an IPv4 packet */
+		// verific daca pachetul este IP. daca nu este, il ignor
 		if (eth_hdr->ethr_type != ntohs(ETHERTYPE_IP)) {
 			printf("Ignored non-IPv4 packet\n");
 			continue;
 		}
 
-		/* TODO 2.1: Check the ip_hdr integrity using ip_checksum((uint16_t *)ip_hdr, sizeof(struct iphdr)) */
+		// verific checksum-ul
 		if (checksum((uint16_t *)ip_header, sizeof(struct ip_hdr)) != 0) {
 			printf("Wrong IP!\n");
 			continue;
 		}
+
 		// trebuie sa verific si daca pachetul este destinat router-ului
 		// altfel, toate pachetele ICMP ar fi tratate ca Echo Request
 		uint32_t current_ip = inet_addr(get_interface_ip(interface));
@@ -513,7 +489,9 @@ int main(int argc, char *argv[])
 			}
 			continue;
 		}
-		/* TODO 2.2: Call get_best_route to find the most specific route, continue; (drop) if null */
+
+		// cautam cea mai buna ruta pentru destinatia pachetului
+		// aici apelez la longest prefix match, facut cu Trie.
 		struct route_table_entry *bestRoute = get_best_route(ip_header->dest_addr);
 		// daca nu exista ruta, trimit mesajul de eroare
 		if (bestRoute == NULL) {
@@ -521,21 +499,22 @@ int main(int argc, char *argv[])
 			send_destination_unreachable(packet_len, packet, interface);
 			continue;
 		}
-		/* TODO 2.3: Check TTL > 1. Update TLL. Update checksum  */
+
+		// verific daca a expirat TTL-ul si recalculez checksum-ul
 		// daca se termina TTL, atunci trimit mesajul de eroare
 		if (ip_header->ttl <= 1) {
 			printf("TTL terminated!\n");
 			send_time_exceeded(packet_len, packet, interface);
 			continue;
 		}
+
 		ip_header->ttl--;
 		ip_header->checksum = 0;
 		// am modificat checksum pentru ca reteaua foloseste big-endian(network-order)
 		// pe cand calculatorul foloseste little-endian(host-order)
 		ip_header->checksum = htons(checksum((uint16_t *)ip_header, sizeof(struct ip_hdr)));
-		/* TODO 2.4: Update the ethernet addresses. Use get_mac_entry to find the destination MAC
-		 * address. Use get_interface_mac(m.interface, uint8_t *mac) to
-		 * find the mac address of our interface. */
+		
+		// caut mac-ul urmatorului hop din tabela
 		struct arp_table_entry *mac = get_mac_entry(bestRoute->next_hop);
 		if (mac == NULL) {
 			printf("Wrong MAC, adding in Queue!\n");
@@ -547,16 +526,17 @@ int main(int argc, char *argv[])
 			current_packet->packet_len = packet_len;
 			memcpy(current_packet->packet, packet, packet_len);
 			queue_enq(my_queue, current_packet);
-			// trimitem ARP_Request
+			// trimit ARP_Request
 			send_arp_request(bestRoute->interface, bestRoute->next_hop);
 			continue;
 		}
+		// actualizez MAC-ul destinatie cu MAC-ul urmatorului hop
 		memcpy(eth_hdr->ethr_dhost, mac->mac, 6);
-
+		// actualizez MAC-ul sursa cu MAC-ul interfetei
 		uint8_t macAddress[6];
 		get_interface_mac(bestRoute->interface, macAddress);
 		memcpy(eth_hdr->ethr_shost, macAddress, 6);
-		// Call send_to_link(best_router->interface, packet, packet_len);
+		// trimit pachetul
 		send_to_link(packet_len, packet, bestRoute->interface);
 	}
 }
