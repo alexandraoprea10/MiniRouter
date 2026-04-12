@@ -27,6 +27,7 @@ parcurgand invers bitii. Functia get_best_route returneaza cea mai buna ruta.In 
 intrarile din tabela de intrare ARP.
 
 Protoclul ARP
+
 Am implementat protocolul ARP dinamic eliminand fisierul arp_table.txt si folosindu-ma de cele trei functii create:
 send_arp_reply, send_arp_request, add_in_queue.
 
@@ -50,6 +51,7 @@ elementele din coada creata mai devreme in coada principala. Apelez aceasta func
 Astfel, trimit pachetele care asteptau in coada, pentru ca am primit un raspuns la request.
 
 Protocolul ICMP
+
 Am implementat cele trei tipuri de mesaje mentionate in enunt: Echo Reply, Destination Unreachable, Time Exceeded.
 
 Functia send_echo_reply retine header-ele Ethernet, IP, ICMP din pachetul curent, copiaza datele din pachetul curent intr-un
