@@ -26,13 +26,16 @@ struct packet_queue {
 	uint32_t next_hop;
 };
 
+// structura trie-ului, best route e ceea ce caut
 struct trie_node {
 	struct trie_node *children[2];
 	struct route_table_entry *best_route;
 };
 
+// radacina
 struct trie_node *root;
 
+// functie de creare a unui nod
 struct trie_node *add_node() {
 	struct trie_node *new_node = malloc(sizeof(struct trie_node));
 	new_node->children[0] = NULL;
@@ -40,25 +43,77 @@ struct trie_node *add_node() {
 	new_node->best_route = NULL;
 	return new_node;
 }
+
+void insert_node(struct trie_node *root, struct route_table_entry *new_entry) {
+	struct trie_node *current = root;
+	// schimbam din network order in host order
+	uint32_t ip = ntohl(new_entry->prefix);
+	uint32_t mask = ntohl(new_entry->mask);
+
+	// parcurgem invers bitii
+	for (int i = 31; i >= 0; i--) {
+		// extragem bitul i din masca
+		int mask_bit = (mask >> i) & 1;
+		// daca am gasit un bit de 0, ne oprim
+		if (mask_bit == 0) {
+			break;
+		}
+		// extragem bitul i din prefix
+		int ip_bit = (ip >> i) & 1;
+		// daca nu exista nod la bitul curent, cream noi un nou nod
+		if (current->children[ip_bit] == NULL) {
+			current->children[ip_bit] = add_node();
+		}
+		// daca exista, atunci coboram spre copilul bitului curent
+		current = current->children[ip_bit];
+	}
+	// aici este best-route 
+	current->best_route = new_entry;
+}
+struct route_table_entry *search(struct trie_node *root, struct route_table_entry *best_route, uint32_t ip_dest, int nr_bits) {
+	// daca gasim un nod NULL, atunci nu exista ruta
+	if (root == NULL || nr_bits < 0)
+		return best_route;
+	// altfel, verificam daca exista un best_route in nodul curent
+	// daca exista, atunci il luam ca best_route actual
+	if (root != NULL && root->best_route != NULL) {	
+			best_route = root->best_route;
+	}
+	// coboram spre copilul bitului curent
+	int ip_bit = (ip_dest >> nr_bits) & 1;
+	// apelez recursiv functia
+	return search(root->children[ip_bit], best_route, ip_dest, nr_bits - 1);
+	
+}
+struct route_table_entry *get_best_route(uint32_t ip_dest) {
+	// initializam best route, asta vom returna
+	struct route_table_entry *best_route = NULL;
+	// schimbam din network order in host order
+	uint32_t ip = ntohl(ip_dest);
+	// apelam functia de search
+	best_route = search(root, best_route, ip, 31);
+	return best_route;
+}
+
 /*
  Returns a pointer (eg. &rtable[i]) to the best matching route, or NULL if there
  is no matching route.
 */
-struct route_table_entry *get_best_route(uint32_t ip_dest) {
-	/* TODO 2.2: Implement the LPM algorithm */
-	/* We can iterate through rtable for (int i = 0; i < rtable_len; i++). Entries in
-	 * the rtable are in network order already */
-	struct route_table_entry *newEntry = NULL;
-	for (int i = 0; i < rtable_len; i++) {
-	if (rtable[i].prefix == (ip_dest & rtable[i].mask)) {
-	  if (newEntry == NULL)
-		newEntry = &rtable[i];
-	if (ntohl(rtable[i].mask) > ntohl(newEntry->mask))
-		newEntry = &rtable[i];
-	}
-}
-	return newEntry;
-}
+// struct route_table_entry *get_best_route(uint32_t ip_dest) {
+// 	/* TODO 2.2: Implement the LPM algorithm */
+// 	/* We can iterate through rtable for (int i = 0; i < rtable_len; i++). Entries in
+// 	 * the rtable are in network order already */
+// 	struct route_table_entry *newEntry = NULL;
+// 	for (int i = 0; i < rtable_len; i++) {
+// 	if (rtable[i].prefix == (ip_dest & rtable[i].mask)) {
+// 	  if (newEntry == NULL)
+// 		newEntry = &rtable[i];
+// 	if (ntohl(rtable[i].mask) > ntohl(newEntry->mask))
+// 		newEntry = &rtable[i];
+// 	}
+// }
+// 	return newEntry;
+// }
 
 struct arp_table_entry *get_mac_entry(uint32_t given_ip) {
 	/* TODO 2.4: Iterate through the MAC table and search for an entry
@@ -394,6 +449,10 @@ int main(int argc, char *argv[])
 	/* Read the static routing table and the MAC table */
 	rtable_len = read_rtable(argv[1], rtable);
 
+	// inseram toate intrarile din tabela de rutare in arbore
+	for (int i = 0; i < rtable_len; i++) {
+		insert_node(root, &rtable[i]);
+	}
 	// PENTRU ARP DINAMIC
 	// sterg fisierul arp_table.txt, scap de ARP static
 	mac_table_len = 0;
