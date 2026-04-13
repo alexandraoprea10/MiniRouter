@@ -26,6 +26,12 @@ cea mai buna ruta curenta. Altfel, atribui celei mai bune, cea mai buna ruta a n
 parcurgand invers bitii. Functia get_best_route returneaza cea mai buna ruta.In main, initializez arborele parcurgand
 intrarile din tabela de intrare ARP.
 
+Explicatie Pimul Screenshot- Subiectul 1
+
+In screenshot-ul "Subiectul1.png" am aratat functionarea procesului de dirijare. Host1, Host2 si Host3 trimit comenzi ping
+si primesc raspunsuri in router1("We recieved a packet!"), ceea ce confirma functionalitatea forwarding-ului: pachetele
+ajung la destinatie. Se poate observa ca pachetele sunt capturate si in Wireshark.
+
 Protoclul ARP
 
 Am implementat protocolul ARP dinamic eliminand fisierul arp_table.txt si folosindu-ma de cele trei functii create:
@@ -50,6 +56,13 @@ trimit pachetul pe interfata corespunzatoare. Daca nu este, atunci il adaug in c
 elementele din coada creata mai devreme in coada principala. Apelez aceasta functie cand primesc un pachet cu opcode 2.
 Astfel, trimit pachetele care asteptau in coada, pentru ca am primit un raspuns la request.
 
+Explicatie Al Doilea Screenshot- Subiectul 2
+
+In screenshot-ul "Subiectul2.png" am aratat functionarea protocolului ARP. Router-ul primeste pachete, dar pentru unele nu
+gaseste MAC-ul. (Pentru debug, am printat si cateva mesaje in functiile send_arp_reply si add_in_queue, pe care ulterior
+le-am sters). Wireshark arata schimbul de "raspunsuri": ARP_Request intreaba catre cine e destinat pachetul, iar ARP_Reply
+raspunde. Apar si alte pachete care sunt procesate normal, cu ICMP.
+
 Protocolul ICMP
 
 Am implementat cele trei tipuri de mesaje mentionate in enunt: Echo Reply, Destination Unreachable, Time Exceeded.
@@ -67,3 +80,12 @@ dar si lungimea totala a pachetului (adaugam payload-ul). Apelez functia atunci 
 Functia send_time_exceeded extrage aceleasi 3 headere ca la send_echo_reply. Facem aceleasi modificari ca la
 send_destination_unreachable, doar ca modificam type si code-ul. Apelez functia atunci cand TTL a expirat
 (in verificarea daca TTL < 1), adica pachetul a expirat si nu mai poate fi dirijat.
+
+Explicatie Al Treilea Screenshot- Subiectul 3
+
+In screenshot-ul "Subiectul3.png" am aratat functionarea protocolului ICMP. Exista 3 cazuri pe care le-am tratat in host-uri diferite.
+Cazul 1: send_echo_reply(pe Host2) -> Host-ul trimite ping si primeste raspuns si 0% packet loss. Astfel, se trimite un Echo Reply.
+Cazul 2: send_time_exceeded(pe Host0) -> se trimite un ping cu ttl = 1. Router-ul verifica pachetul in if-ul corespunzator
+time-to-live si da drop la pachet, trimitand si mesajul de eroare "TTL Terminated!". Cazul 3: send_destination_unreachable(pe Host1).
+Este trimis ping catre o adresa care nu exista in tabela de rutare. Este trimis un mesaj de eroare "Destination Unreachable!".
+Pentru acest subiect, am lucrat cu ARP static.

@@ -109,7 +109,6 @@ void send_echo_reply(int packet_len, char *packet, int interface) {
 	// iau headerele din pachetul curent
 	struct ether_hdr *current_eth = (struct ether_hdr *)packet;
 	struct ip_hdr *current_ip = (struct ip_hdr *)(packet + sizeof(struct ether_hdr));
-	struct icmp_hdr *current_icmp = (struct icmp_hdr *)(packet + sizeof(struct ether_hdr) + sizeof(struct ip_hdr));
 
 	// copiez in buffer pachetul curent pentru ca urmeaza sa il modific
 	char buf[1500];
@@ -162,7 +161,6 @@ void send_destination_unreachable(int packet_len, char *packet, int interface) {
 	// iau headerele din pachetul curent
 	struct ether_hdr *current_eth = (struct ether_hdr *)packet;
 	struct ip_hdr *current_ip = (struct ip_hdr *)(packet + sizeof(struct ether_hdr));
-	struct icmp_hdr *current_icmp = (struct icmp_hdr *)(packet + sizeof(struct ether_hdr) + sizeof(struct ip_hdr));
 
 	// copiez in buffer pachetul curent pentru ca urmeaza sa il modific
 	char buf[1500];
@@ -229,7 +227,6 @@ void send_time_exceeded(int packet_len, char *packet, int interface) {
 	// iau headerele din pachetul curent
 	struct ether_hdr *current_eth = (struct ether_hdr *)packet;
 	struct ip_hdr *current_ip = (struct ip_hdr *)(packet + sizeof(struct ether_hdr));
-	struct icmp_hdr *current_icmp = (struct icmp_hdr *)(packet + sizeof(struct ether_hdr) + sizeof(struct ip_hdr));
 
 	// copiez in buffer pachetul curent pentru ca urmeaza sa il modific
 	char buf[1500];
@@ -401,7 +398,8 @@ void add_in_queue(struct arp_hdr *packet) {
 	}
 	// punem toate elementele din coada packets in coada principala
 	while (!queue_empty(packets)) {
-		queue_enq(my_queue, queue_deq(packets));
+		struct packet_queue *current = (struct packet_queue *)queue_deq(packets);
+		queue_enq(my_queue, current);
 	}
 }
 int main(int argc, char *argv[])
