@@ -181,10 +181,6 @@ void send_destination_unreachable(int packet_len, char *packet, int interface) {
 	memcpy(new_eth->ethr_shost, macAddress, 6);
 
 	// pentru ip
-	// recalculez checksum-ul cu noul ip
-	// am schimbat ordinea, calculez checksum-ul dupa ce termin de modificat structura
-	new_ip->checksum = 0;
-	new_ip->checksum = htons(checksum((uint16_t *)new_ip, sizeof(struct ip_hdr)));
 	// destinatia devine sursa
 	new_ip->dest_addr = current_ip->source_addr;
 	// new_ip->frag = se copiaza din pachetul curent
@@ -205,6 +201,10 @@ void send_destination_unreachable(int packet_len, char *packet, int interface) {
 	// resetez ttl-ul
 	new_ip->ttl = 100;
 	// new_ip->ver = se copiaza din pachetul curent
+	// recalculez checksum-ul cu noul ip
+	// am schimbat ordinea, calculez checksum-ul dupa ce termin de modificat structura
+	new_ip->checksum = 0;
+	new_ip->checksum = htons(checksum((uint16_t *)new_ip, sizeof(struct ip_hdr)));
 
 	// pentru icmp
 	// host_unreachable are codul (3, 0)
