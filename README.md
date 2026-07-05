@@ -1,91 +1,72 @@
-Repository for the first homework of the Communication Networks class. In this homework
-the students will implement the dataplane of a router.
+# Router Dataplane Implementation
 
-Mai intai aloc tabelele ARP si MAC. Initializez lungimea tabelelor si adaug in arbore fiecare intrare din tabel.
-Initializez coada de pachete si lungimea tabelei MAC cu 0. (Pentru ARP dinamic) 
+## 📖 Overview
+Repository for the first homework of the Communication Networks class. In this homework, the students implement the dataplane of a network router.
 
-Procesul de dirijare - Forwarding
 
-Extrag header-ele Ethernet si IP.
-Prima data verific daca checksum-ul header-ului IP este valid. Daca nu este valid, trebuie sa dau drop pachetului.
-Apoi, verific daca pachetul este destinat router-ului(il tratez mai apoi ca echo_reply- pentru Protocolul ICMP).
-Caut cea mai buna ruta folosind Longest Prefix Match(explicat mai jos). Verific daca TTL-ul pachetului a expirat.
-In caz afirmativ, il tratez cu time_exceeded- pentru protoclul. Altfel, scad ttl-ul si reactualizez checksum-ul.
-Caut MAC-ul urmatorului hop in tabela ARP. Daca nu il gasesc, adaug pachetul in coada de pachete si trimit arp_request.
-Reactualizez destinatia si sursa MAC-ului si trimit pachetul pe interfata rutei gasite.
+## 📦 Project Architecture & Implementation
 
-Longest Prefix Match - Eficient
+### 🗺️ Initialization & Memory Allocation
+* **Table Allocation**: At startup, the router allocates memory for the static ARP and MAC tables. It initializes the length of these tables and populates the routing tree by adding each entry from the input routing table.
+* **Dynamic ARP Setup**: The initial packet queue is initialized, and the operational length of the dynamic MAC table is set to `0` to prepare for dynamic address resolution.
 
-Pentru a gasi cea mai buna ruta, am implementat LPM cu Trie, cum e sugerat in enuntul temei. Fiecare nod este cate un bit
-din adresa IP, iar inserarea oricarei rute se face bit cu bit, in adancime. Mai intai, am initializat radacina cu ajutorul
-functiei add_node, ce creaza un nod nou. Pentru functia de insert, parcurg bitii invers, de la MSB la LSB. Daca gasesc un
-bit de 0 in masca, atunci ma opresc. Parcurg in continuare bitii din adresa IP. Daca nu exista nod la bitul curent, atunci
-inseamna ca nu exista nodul si il vom crea cu ajutorul functiei add_node(). Daca exista nod la bitul curent, atunci coboram
-in adancime. Functia de search cauta cea mai buna ruta. Daca gasesc un nod NULL sau am parcurs toti bitii, atunci returnez
-cea mai buna ruta curenta. Altfel, atribui celei mai bune, cea mai buna ruta a nodului curent. Apelez recursiv functia,
-parcurgand invers bitii. Functia get_best_route returneaza cea mai buna ruta.In main, initializez arborele parcurgand
-intrarile din tabela de intrare ARP.
 
-Explicatie Pimul Screenshot- Subiectul 1
+### 🔄 The Forwarding Process
+For each incoming network packet, the router executes the following execution flow:
+1.  **Header Extraction**: Extracts the baseline Ethernet and IPv4 headers from the raw packet buffer.
+2.  **Checksum Validation**: Verifies if the checksum of the IP header is valid. If the checksum is invalid, the router instantly **drops** the packet.
+3.  **Local Destination Check**: Checks if the packet is destined for the router itself. If true, it will later pass it to the ICMP handler to be processed as an `echo_reply`.
+4.  **Route Lookup**: Searches for the optimal next hop using the **Longest Prefix Match (LPM)** algorithm (detailed below).
+5.  **TTL Verification**: Inspects if the packet's Time-to-Live (TTL) has expired. If it has expired (`TTL <= 1`), the packet is dropped and handled via the `time_exceeded` ICMP protocol. Otherwise, the router decrements the TTL and incrementally updates the IP header checksum.
+6.  **Next-Hop Resolution**: Searches for the destination MAC address of the next hop in the ARP table:
+    * **Hit**: Updates the source and destination MAC fields in the Ethernet header and transmits the packet through the interface of the found route.
+    * **Miss**: Adds the current packet to the packet retention queue and broadcasts an `arp_request`.
 
-In screenshot-ul "Subiectul1.png" am aratat functionarea procesului de dirijare. Host1, Host2 si Host3 trimit comenzi ping
-si primesc raspunsuri in router1("We recieved a packet!"), ceea ce confirma functionalitatea forwarding-ului: pachetele
-ajung la destinatie. Se poate observa ca pachetele sunt capturate si in Wireshark.
 
-Protoclul ARP
+### 🌳 Efficient Longest Prefix Match (LPM) via Trie
 
-Am implementat protocolul ARP dinamic eliminand fisierul arp_table.txt si folosindu-ma de cele trei functii create:
-send_arp_reply, send_arp_request, add_in_queue.
+To find the absolute best route efficiently, the routing table is structured as a **Trie (Prefix Tree)**, as suggested in the assignment description. Each node in the tree represents a single bit of the IP address, and route insertion is performed bit-by-bit into the tree depth.
 
-Functia send_arp_reply raspunde cu adresa MAC a interfetei curente atunci cand router-ul primeste un ARP Request. Functia
-extrage header-ele din pachetul curent si copiaza intr-un buffer toate datele pachetului aferent. Sunt extrase din nou
-header-ele Ethernet si ARP din buffer-ul nou, pentru ca urmeaza ca o parte din informatii sa fie modificate. Sunt modificate
-sursa si destinatia pentru Ethernet. In protocolul ARP, setez opcode la 2(corespunzator reply-ului), sender-ul hardware devine
-MAC-ul, sender protocol address devine IP-ul, iar target hardware devine adresa sender-ului din ce primim. Apelez aceasta
-functie cand primesc un pachet cu Opcode 1.
+#### The `insert` Function
+* Parses the IP address bits in reverse order, traveling from the **Most Significant Bit (MSB)** down to the **Least Significant Bit (LSB)**.
+* **Mask Check**: If the algorithm encounters a `0` bit in the network mask, the insertion process stops immediately.
+* The router continues traversing the bits of the IP address. If no node exists at the current bit path, a new node is created using the `add_node()` helper function. If a node already exists, the algorithm simply descends deeper into the tree branch.
 
-Functia send_arp_request trimite un ARP request atunci cand router-ul trebuie sa dirijeze un pachet in care nu e cunoscut
-MAC-ul urmatorului hop. Pachetul trebuie creat de la 0, astfel ca nu mai copiez nimic, ci setez buffer-ul initial la 0.
-Extrag header-ele Ethernet si ARP, in care face aproximativ acelasi lucru ca la arp_reply. Pentru ARP, setez si restul
-campurilor conform RFC 5342(mentionat in enunt). Apelez aceasta cand nu gasesc MAC-ul urmatorului hop.
+#### The `search` / `get_best_route` Function
+* The search engine queries the trie to locate the best matching route.
+* If it encounters a `NULL` node or completes the traversal of all address bits, the function returns the best current route found up to that point.
+* Otherwise, it continuously updates the tracking reference to hold the best route of the current node and recursively calls itself, traversing the bits in reverse order.
+* The tree is fully initialized inside `main` by looping through all entries of the input routing table.
 
-Functia add_in_queue creeaza coada de asteptare a pachetelor. Acest lucru este important pentru ca nu vreau ca router-ul sa
-se blocheze. Functia adauga o noua intrare in tabela ARP, apoi initializeaza o noua coada de pachete. Parcurg coada initiala
-si pentru fiecare pachet verific daca next hop este acelasi cu ip-ul primit. Daca este, atunci actualizez campul Ethernet si
-trimit pachetul pe interfata corespunzatoare. Daca nu este, atunci il adaug in coada de asteptare. La sfarsit, mut toate
-elementele din coada creata mai devreme in coada principala. Apelez aceasta functie cand primesc un pachet cu opcode 2.
-Astfel, trimit pachetele care asteptau in coada, pentru ca am primit un raspuns la request.
 
-Explicatie Al Doilea Screenshot- Subiectul 2
+### 🌐 Network Protocols
 
-In screenshot-ul "Subiectul2.png" am aratat functionarea protocolului ARP. Router-ul primeste pachete, dar pentru unele nu
-gaseste MAC-ul. (Pentru debug, am printat si cateva mesaje in functiile send_arp_reply si add_in_queue, pe care ulterior
-le-am sters). Wireshark arata schimbul de "raspunsuri": ARP_Request intreaba catre cine e destinat pachetul, iar ARP_Reply
-raspunde. Apar si alte pachete care sunt procesate normal, cu ICMP.
+#### Module: `ARP Protocol`
+The dynamic ARP protocol is implemented by removing the static `arp_table.txt` and using three key functions:
 
-Protocolul ICMP
+* **`send_arp_reply`**: Triggered upon receiving an `ARP Request` (`Opcode 1`). It copies the packet into a new buffer, extracts the headers, and swaps the Ethernet source/destination addresses. Within the ARP header, it sets `opcode` to `2` (Reply), sets the sender hardware/protocol addresses to the router's current interface MAC/IP, and maps the target hardware address to the initial sender's MAC.
+* **`send_arp_request`**: Executed when the next-hop MAC is unknown. It creates a new packet from scratch (`0`-initialized buffer), extracts the Ethernet and ARP headers, and configures fields strictly according to **RFC 5342**.
+* **`add_in_queue`**: Manages buffered packets to keep the router non-blocking. Triggered upon receiving an `ARP Reply` (`Opcode 2`), it inserts the new entry into the ARP table and creates a temporary queue. It loops through the main queue; if a packet's `next_hop` matches the new IP, its Ethernet header is updated and the packet is transmitted. Unmatched packets go into the temporary queue, and at the end, all temporary entries are moved back into the primary queue.
 
-Am implementat cele trei tipuri de mesaje mentionate in enunt: Echo Reply, Destination Unreachable, Time Exceeded.
 
-Functia send_echo_reply retine header-ele Ethernet, IP, ICMP din pachetul curent, copiaza datele din pachetul curent intr-un
-buffer si apoi modifica cele trei headere. Pentru Ethernet, este nevoie sa modificam destinatarul si sursa. Pentru IP, se schimba
-sursa cu destinatia, TTL-ul este resetat(l-am resetat la 100) si checksum-ul este reactualizat abia la final, dupa ce fac
-modificarile aferente. Pentru ICMP, type-ul si codul devin 0(mentionat in enunt). Apelez functia atunci cand roueter-ul primeste
-un ICMP destinat lui. Este comparat IP-ul interfetei cu IP-ul destinatie.
+### 🛠️ ICMP Protocol
+The engine handles diagnostics and error reporting through three custom ICMP message types:
 
-Functia send_destination_unreachable extrage aceleasi 3 headere ca la send_echo_reply. Facem aproximativ aceleasi modificari,
-dar la nivelul ICMP extragem si payload-ul(8 bytes -> 64 biti), iar la nivelul IP modificam type si code. Recalculam checksum-ul
-dar si lungimea totala a pachetului (adaugam payload-ul). Apelez functia atunci cand nu exista nicio ruta in tabela de rutare catre destinatie.
+* **`send_echo_reply`**: Responds to ICMP requests addressed directly to the router. It copies the packet into a new buffer, swaps the source/destination addresses for both Ethernet and IP layers, resets the TTL to a default boundary (`100`), modifies the ICMP `type` and `code` to `0`, and finally recalculates the IP checksum.
+* **`send_destination_unreachable`**: Triggered when no valid route exists. It modifies the three base headers similarly to an echo reply, extracts the first `8 bytes (64 bits)` of the original packet's payload, updates the ICMP `type` and `code` to signal an unreachable destination, and recalculates both the IP checksum and total length fields.
+* **`send_time_exceeded`**: Triggered when a packet's TTL expires (`TTL < 1`). It follows the exact same structural logic and payload encapsulation as `send_destination_unreachable`, but configures the specific ICMP `type` and `code` variables dedicated to time-outs.
 
-Functia send_time_exceeded extrage aceleasi 3 headere ca la send_echo_reply. Facem aceleasi modificari ca la
-send_destination_unreachable, doar ca modificam type si code-ul. Apelez functia atunci cand TTL a expirat
-(in verificarea daca TTL < 1), adica pachetul a expirat si nu mai poate fi dirijat.
 
-Explicatie Al Treilea Screenshot- Subiectul 3
+### 📊 Functional Analysis
 
-In screenshot-ul "Subiectul3.png" am aratat functionarea protocolului ICMP. Exista 3 cazuri pe care le-am tratat in host-uri diferite.
-Cazul 1: send_echo_reply(pe Host2) -> Host-ul trimite ping si primeste raspuns si 0% packet loss. Astfel, se trimite un Echo Reply.
-Cazul 2: send_time_exceeded(pe Host0) -> se trimite un ping cu ttl = 1. Router-ul verifica pachetul in if-ul corespunzator
-time-to-live si da drop la pachet, trimitand si mesajul de eroare "TTL Terminated!". Cazul 3: send_destination_unreachable(pe Host1).
-Este trimis ping catre o adresa care nu exista in tabela de rutare. Este trimis un mesaj de eroare "Destination Unreachable!".
-Pentru acest subiect, am lucrat cu ARP static.
+#### Subject 1: Standard Routing & Forwarding (`Subiectul1.png`)
+Demonstrates the steady-state packet forwarding process. `Host1`, `Host2`, and `Host3` send active `ping` streams and successfully receive replies inside `router1` (`"We recieved a packet!"`), which explicitly confirms that the forwarding functionality works and packets safely reach their destination. All processed packets are successfully captured and tracked live inside Wireshark.
+
+#### Subject 2: Dynamic Address Resolution (`Subiectul2.png`)
+Demonstrates the live operational execution of the dynamic ARP protocol. The router processes incoming packets, but for certain nodes, it cannot find the corresponding MAC address. (For debugging purposes, tracking logs were initially printed inside `send_arp_reply` and `add_in_queue`, which were subsequently removed). The Wireshark trace captures the full exchange of request-reply packets: `ARP_Request` queries who owns the target destination IP, and `ARP_Reply` responds with the valid hardware address. Other background packets are processed normally via standard ICMP streams.
+
+#### Subject 3: ICMP Diagnostic Validation (`Subiectul3.png`)
+Validates edge-case ICMP error generation, which was explicitly tested and analyzed across three isolated hosts using a static ARP configuration:
+* **Case 1 (Executed on Host2)**: Tests `send_echo_reply`. The host triggers a standard `ping` command, receives a valid echo response, and logs a stable `0% packet loss` feedback loop.
+* **Case 2 (Executed on Host0)**: Tests `send_time_exceeded`. A specialized ping command is forced with a constraint of `ttl = 1`. The router evaluates the packet in the corresponding time-to-live conditional block, drops the packet, and issues the `"TTL Terminated!"` ICMP error report.
+* **Case 3 (Executed on Host1)**: Tests `send_destination_unreachable`. A ping is directed toward an invalid IP address that does not exist anywhere inside the routing table. The router catches the lookup failure and outputs a `"Destination Unreachable!"` alert.
